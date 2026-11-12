@@ -7,8 +7,8 @@ _Last updated: 2026-11-12_
 All core features are built and verified end to end in a real browser, with a
 real database. Every automated test suite passes, the typecheck and production
 build succeed, and the full Docker stack (Postgres, Redis, API, BullMQ worker,
-web) was built and smoke-tested on 2026-11-12. Still unexecuted: the live Claude
-API path and CI (see "Setup requirements" below).
+web) was built and smoke-tested on 2026-11-12. CI passes on GitHub Actions. Still
+unexecuted: the live Claude API path (see "Setup requirements" below).
 
 ## Definition of done
 
@@ -21,6 +21,7 @@ API path and CI (see "Setup requirements" below).
 | Docker configuration works | ✅ Done | `docker compose up --build`: all 5 services up; smoke test passed (see below) |
 | Documentation complete | ✅ Done | README, docs/ARCHITECTURE.md, docs/API.md, docs/DEPLOYMENT.md |
 | No known critical security issue | ✅ None known | SSRF guard, JWT + rotating refresh tokens, encrypted secrets, rate limiting, validation (details in ARCHITECTURE.md) |
+| CI | ✅ Done | GitHub Actions run 43190717966 green: typecheck, backend + web tests, build, Playwright e2e |
 | Limitations documented | ✅ Done | This file + README |
 
 ## Completed features
@@ -61,6 +62,10 @@ API path and CI (see "Setup requirements" below).
 - Rate limits on auth endpoints and the request executor.
 - Structured logging (pino) with auth headers and cookies redacted.
 
+## Repository
+
+https://github.com/sanikaa12-art/apiforge (branch `main`).
+
 ## Docker verification (2026-11-12)
 
 Docker 29.9.3, Compose 5.7.0. A smoke script ran against http://localhost:8080
@@ -88,14 +93,12 @@ dependencies); register a new account instead.
 | Item | Needed for | Status |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | Live Claude-powered test generation | Not provided. The heuristic generator is used meanwhile. |
-| GitHub repository | CI workflow (`.github/workflows/ci.yml`) | Not created. Project isn't a git repo yet. |
 | Hosting account (e.g. Render) | Public deployment via `render.yaml` | Not created. Needs owner authorization. |
 
 ## Outstanding tasks
 
 1. Set `ANTHROPIC_API_KEY` and try AI generation once on the live API.
-2. `git init`, push to GitHub, and confirm CI passes.
-3. Deploy (only after the owner approves an account).
+2. Deploy (only after the owner approves an account).
 
 ## Known limitations
 
