@@ -88,16 +88,31 @@ Run it with: `docker compose --env-file .env.docker up --build -d`.
 committed. Demo seed data isn't loaded in the Docker DB (the seed needs dev
 dependencies); register a new account instead.
 
+## Live Claude API check (2026-11-12)
+
+- With an earlier, malformed key, the request was rejected with 401
+  `invalid x-api-key`. APIForge logged a warning and fell back to the heuristic
+  generator as designed.
+- One minimal request with the new key (claude-haiku-5-5, max_tokens 5)
+  returned **HTTP 400** `invalid_request_error`: "Your credit balance is too
+  low to access the Anthropic API." (request_id
+  `req_011CgxqP4VM61d1ZMD2Mdq6B`). The key authenticates (not a 401), but the
+  account has no API credits.
+- The AI test-generation end-to-end check was **not run**, because the minimal
+  check failed. No retries were made.
+- Status: the Claude path is implemented and its fallback is verified, but live
+  generation is unverified until credits are added.
+
 ## Setup requirements (external)
 
 | Item | Needed for | Status |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | Live Claude-powered test generation | Not provided. The heuristic generator is used meanwhile. |
+| Anthropic API credits | Live Claude-powered test generation | Key is set in `server/.env` and authenticates, but the account has no credits (see below). Heuristic generator is used meanwhile. |
 | Hosting account (e.g. Render) | Public deployment via `render.yaml` | Not created. Needs owner authorization. |
 
 ## Outstanding tasks
 
-1. Set `ANTHROPIC_API_KEY` and try AI generation once on the live API.
+1. Add credits at console.anthropic.com → Plans & Billing, then run one live AI generation.
 2. Deploy (only after the owner approves an account).
 
 ## Known limitations
