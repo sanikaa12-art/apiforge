@@ -1,0 +1,60 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: apiforge, POSTGRES_PASSWORD: apiforge, POSTGRES_DB: apiforge_test }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U apiforge" --health-interval 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql://apiforge:apiforge@localhost:5432/apiforge_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx prisma generate
+        working-directory: server
+        env: { DATABASE_URL: postgresql://x:x@localhost:5432/x }
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Backend tests (unit + integration against Postgres)
+        run: npm test -w server
+      - name: Frontend unit tests
+        run: npm test -w web
+      - name: Build
+        run: npm run build
+        env: { DATABASE_URL: postgresql://x:x@localhost:5432/x }
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: apiforge, POSTGRES_PASSWORD: apiforge, POSTGRES_DB: apiforge }
+        ports: ["5433:5432"]
+        options: --health-cmd "pg_isready -U apiforge" --health-interval 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://apiforge:apiforge@localhost:5433/apiforge
+      JWT_ACCESS_SECRET: ci-only-secret-ci-only-secret-ci-only-secret
+      ENCRYPTION_KEY: Q0lfT05MWV9LRVlfQ0lfT05MWV9LRVlfQ0lfT05MWV8=
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - run: npx prisma migrate deploy && npx prisma generate && npm run db:seed
+        working-directory: server
+      - run: npx playwright install --with-deps chromium
+        working-directory: web
+      - run: npm run test:e2e -w web
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-report, path: web/playwright-report }

@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+.env.docker
+.pgdata
+.pgdata-test
+server/src/generated
+web/test-results
+web/playwright-report
+coverage
+.DS_Store

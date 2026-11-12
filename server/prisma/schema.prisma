@@ -1,0 +1,287 @@
+// APIForge database schema.
+// All queries go through Prisma, which uses parameterized SQL (no string-built queries).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  refreshTokens RefreshToken[]
+  collections   Collection[]
+  environments  Environment[]
+  history       RequestHistory[]
+  testSuites    TestSuite[]
+  apiSpecs      ApiSpec[]
+}
+
+/// Refresh tokens are stored hashed (SHA-256). Rotation: every use revokes the
+/// token and issues a new one in the same "family". Reuse of a revoked token
+/// revokes the whole family (stolen-token detection).
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  familyId  String
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+model Collection {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  folders  Folder[]
+  requests SavedRequest[]
+
+  @@index([userId])
+}
+
+model Folder {
+  id           String   @id @default(cuid())
+  collectionId String
+  parentId     String?
+  name         String
+  createdAt    DateTime @default(now())
+
+  collection Collection     @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  parent     Folder?        @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   Folder[]       @relation("FolderTree")
+  requests   SavedRequest[]
+
+  @@index([collectionId])
+}
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+  HEAD
+  OPTIONS
+}
+
+model SavedRequest {
+  id           String     @id @default(cuid())
+  collectionId String
+  folderId     String?
+  name         String
+  method       HttpMethod @default(GET)
+  url          String
+  /// [{ key, value, enabled }]
+  headers      Json       @default("[]")
+  /// [{ key, value, enabled }]
+  queryParams  Json       @default("[]")
+  body         String?
+  bodyType     String     @default("none") // none | json | text | form
+  description  String?
+  sortOrder    Int        @default(0)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  folder     Folder?    @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  @@index([collectionId])
+}
+
+enum EnvironmentKind {
+  DEVELOPMENT
+  STAGING
+  PRODUCTION
+  CUSTOM
+}
+
+model Environment {
+  id        String          @id @default(cuid())
+  userId    String
+  name      String
+  kind      EnvironmentKind @default(CUSTOM)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  user       User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variables  EnvironmentVariable[]
+  testSuites TestSuite[]
+
+  @@unique([userId, name])
+}
+
+/// Secret values are encrypted at rest with AES-256-GCM and never returned to the client.
+model EnvironmentVariable {
+  id            String  @id @default(cuid())
+  environmentId String
+  key           String
+  value         String
+  isSecret      Boolean @default(false)
+
+  environment Environment @relation(fields: [environmentId], references: [id], onDelete: Cascade)
+
+  @@unique([environmentId, key])
+}
+
+model RequestHistory {
+  id              String   @id @default(cuid())
+  userId          String
+  method          String
+  url             String
+  status          Int?
+  durationMs      Int?
+  sizeBytes       Int?
+  error           String?
+  requestHeaders  Json     @default("{}")
+  responseHeaders Json     @default("{}")
+  responseBody    String?
+  environmentId   String?
+  createdAt       DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+
+model ApiSpec {
+  id            String   @id @default(cuid())
+  userId        String
+  title         String
+  version       String?
+  baseUrl       String?
+  /// Normalised endpoint list extracted from the spec
+  endpoints     Json
+  raw           Json
+  collectionId  String?
+  createdAt     DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model TestSuite {
+  id            String   @id @default(cuid())
+  userId        String
+  name          String
+  description   String?
+  environmentId String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  environment Environment? @relation(fields: [environmentId], references: [id], onDelete: SetNull)
+  cases       TestCase[]
+  runs        TestRun[]
+
+  @@index([userId])
+}
+
+enum TestCaseStatus {
+  DRAFT
+  APPROVED
+  REJECTED
+}
+
+enum TestCaseSource {
+  MANUAL
+  AI
+  HEURISTIC
+  OPENAPI
+}
+
+model TestCase {
+  id          String         @id @default(cuid())
+  suiteId     String
+  name        String
+  description String?
+  category    String         @default("positive") // positive | negative | edge | validation | security
+  method      HttpMethod     @default(GET)
+  url         String
+  headers     Json           @default("[]")
+  queryParams Json           @default("[]")
+  body        String?
+  /// Assertion[] — see src/modules/testing/assertions.ts
+  assertions  Json           @default("[]")
+  status      TestCaseStatus @default(APPROVED)
+  source      TestCaseSource @default(MANUAL)
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  suite   TestSuite    @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  results TestResult[]
+
+  @@index([suiteId])
+}
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model TestRun {
+  id          String    @id @default(cuid())
+  suiteId     String
+  status      RunStatus @default(QUEUED)
+  total       Int       @default(0)
+  passed      Int       @default(0)
+  failed      Int       @default(0)
+  durationMs  Int?
+  summary     String?
+  summarySource String?
+  error       String?
+  startedAt   DateTime?
+  finishedAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  suite   TestSuite    @relation(fields: [suiteId], references: [id], onDelete: Cascade)
+  results TestResult[]
+
+  @@index([suiteId, createdAt])
+}
+
+model TestResult {
+  id           String   @id @default(cuid())
+  runId        String
+  testCaseId   String?
+  name         String
+  method       String
+  url          String
+  passed       Boolean
+  status       Int?
+  durationMs   Int?
+  error        String?
+  /// [{ assertion, passed, actual, message }]
+  assertions   Json     @default("[]")
+  responseBody String?
+  createdAt    DateTime @default(now())
+
+  run      TestRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  testCase TestCase? @relation(fields: [testCaseId], references: [id], onDelete: SetNull)
+
+  @@index([runId])
+}

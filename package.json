@@ -1,0 +1,19 @@
+{
+  "name": "apiforge",
+  "private": true,
+  "version": "1.0.0",
+  "description": "APIForge — AI-powered API development and testing platform",
+  "workspaces": ["server", "web"],
+  "scripts": {
+    "dev": "npm run dev -w server & npm run dev -w web",
+    "db:start": "npm run db:start -w server",
+    "db:migrate": "npm run db:migrate -w server",
+    "db:seed": "npm run db:seed -w server",
+    "worker": "npm run worker -w server",
+    "test": "npm test -w server && npm test -w web",
+    "test:e2e": "npm run test:e2e -w web",
+    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
+    "build": "npm run build -w server && npm run build -w web"
+  },
+  "engines": { "node": ">=20" }
+}

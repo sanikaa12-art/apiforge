@@ -1,0 +1,65 @@
+# Full stack: PostgreSQL, Redis, API, background worker and web UI.
+#   cp .env.docker.example .env.docker   # then fill in the secrets
+#   docker compose --env-file .env.docker up --build
+# Open http://localhost:8080
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: apiforge
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: apiforge
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apiforge"]
+      interval: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+
+  server:
+    build: { context: ., dockerfile: server/Dockerfile }
+    environment: &server-env
+      NODE_ENV: production
+      PORT: 4000
+      TRUST_PROXY: 1
+      CORS_ORIGIN: ${PUBLIC_URL:-http://localhost:8080}
+      DATABASE_URL: postgresql://apiforge:${POSTGRES_PASSWORD}@postgres:5432/apiforge
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?set JWT_ACCESS_SECRET}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?set ENCRYPTION_KEY}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-claude-opus-5-5}
+      LOG_LEVEL: info
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    restart: unless-stopped
+
+  worker:
+    build: { context: ., dockerfile: server/Dockerfile }
+    command: ["node", "dist/worker.js"]
+    # The image HTTP healthcheck targets the API; the worker has no HTTP port.
+    healthcheck: { disable: true }
+    environment: *server-env
+    depends_on:
+      server: { condition: service_healthy }
+    restart: unless-stopped
+
+  web:
+    build: { context: ., dockerfile: web/Dockerfile }
+    ports: ["8080:8080"]
+    depends_on: [server]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
