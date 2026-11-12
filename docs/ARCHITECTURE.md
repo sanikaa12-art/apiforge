@@ -97,9 +97,10 @@ Cases run **sequentially** so load on the target API is predictable and reports 
 source ─┬─ saved request / ad-hoc endpoint ──▶ infer schema from example body ─┐
         └─ OpenAPI spec (selected endpoints) ──────────────────────────────────┤
                                                                                ▼
-                                     ANTHROPIC_API_KEY? ── yes ─▶ Claude (structured output, Zod schema)
-                                              │                         │ error/refusal
-                                              no ◀──────────────────────┘
+              AI_PROVIDER=claude + key (opt-in)? ── yes ─▶ Claude (structured output, Zod schema)
+                                              │                         │ error/refusal (401/403/no credits
+                                              │                         │ also disables Claude for the process)
+                                   no (default) ◀──────────────────────┘
                                               ▼
                                   heuristic generator (rules) ──▶ TestCase[status = DRAFT] + validation gaps
                                                                       │ human review

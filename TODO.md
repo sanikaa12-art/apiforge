@@ -2,13 +2,11 @@
 
 Ordered by value. All core features, tests and the production build, Docker and CI are done; see PROJECT_STATUS.md.
 
-## P1 — AI differentiator
-1. Set `ANTHROPIC_API_KEY` in `server/.env` → generate tests once against the live API (one call, low cost).
+## P1 — Deployment (needs owner approval + free Render account)
+1. Deploy via `render.yaml` (free plans), set ENCRYPTION_KEY + CORS_ORIGIN.
 
-## P2 — Deployment (needs owner approval + account)
-2. Deploy via `render.yaml` (or another host).
-
-## P3 — Optional enhancements (only if budget allows)
+## P2 — Optional enhancements (only if budget allows)
+- Optional: Claude generation (`AI_PROVIDER=claude`) once API credits are available.
 - Seed demo data inside the Docker stack (compile seed.ts into dist).
 - Multipart/form-data request bodies.
 - External `$ref` resolution in OpenAPI import.

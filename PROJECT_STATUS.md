@@ -7,8 +7,8 @@ _Last updated: 2026-11-12_
 All core features are built and verified end to end in a real browser, with a
 real database. Every automated test suite passes, the typecheck and production
 build succeed, and the full Docker stack (Postgres, Redis, API, BullMQ worker,
-web) was built and smoke-tested on 2026-11-12. CI passes on GitHub Actions. Still
-unexecuted: the live Claude API path (see "Setup requirements" below).
+web) was built and smoke-tested on 2026-11-12. CI passes on GitHub Actions. No paid service
+is required; Claude is an optional, off-by-default add-on.
 
 ## Definition of done
 
@@ -88,32 +88,55 @@ Run it with: `docker compose --env-file .env.docker up --build -d`.
 committed. Demo seed data isn't loaded in the Docker DB (the seed needs dev
 dependencies); register a new account instead.
 
-## Live Claude API check (2026-11-12)
+## No paid services required (2026-11-12)
 
-- With an earlier, malformed key, the request was rejected with 401
-  `invalid x-api-key`. APIForge logged a warning and fell back to the heuristic
-  generator as designed.
-- One minimal request with the new key (claude-haiku-5-5, max_tokens 5)
-  returned **HTTP 400** `invalid_request_error`: "Your credit balance is too
-  low to access the Anthropic API." (request_id
-  `req_011CgxqP4VM61d1ZMD2Mdq6B`). The key authenticates (not a 401), but the
-  account has no API credits.
-- The AI test-generation end-to-end check was **not run**, because the minimal
-  check failed. No retries were made.
-- Status: the Claude path is implemented and its fallback is verified, but live
-  generation is unverified until credits are added.
+- `AI_PROVIDER` defaults to `local`. Claude is only called when it is set to
+  `claude` **and** `ANTHROPIC_API_KEY` is present, so a key left in `.env` never
+  triggers a paid call. If Anthropic rejects the key or the account has no
+  credits (401/403/billing 400), Claude is disabled for the rest of the process
+  and the local generator takes over.
+- An earlier live check returned HTTP 400 "credit balance is too low" (request
+  `req_011CgxqP4VM61d1ZMD2Mdq6B`). No further paid calls were made.
+- Rule-based generator additions:
+  - invalid enum values and invalid formats (email, uuid, date, date-time, uri);
+  - missing required query parameters;
+  - path-parameter traversal/injection;
+  - exactly-at-maxLength boundary cases;
+  - round-robin category balancing with de-duplication, so small limits still
+    cover every category.
+  - New unit tests: `server/tests/unit/heuristic.test.ts`.
+- Verified 2026-11-12:
+  - typecheck and production build pass;
+  - 94 backend tests, 9 web tests and 7 Playwright e2e tests pass;
+  - a fresh Docker run (`down -v`, `build --no-cache`, `up`) passes the smoke
+    test. That includes local test generation (12 tests across all 5
+    categories, 6 validation gaps, all drafts), approval, and a run executed by
+    the BullMQ worker.
+- Deployment: `render.yaml` now uses only free plans (free Postgres, Docker web
+  service, static site, no worker or Redis). Trade-offs are in
+  docs/DEPLOYMENT.md.
+
+### What genuinely needs a paid service
+
+- **Claude-powered generation and summaries.** Optional; needs Anthropic API
+  credits. The free local generator covers the feature.
+- **A dedicated background worker on Render.** Render background workers and
+  Key Value are paid. On free hosting, jobs run in-process in the API instead,
+  which works but limits you to a single API instance.
+- **An always-on demo URL.** Free Render web services sleep after ~15 minutes
+  idle, and Render's free Postgres expires after 30 days (use free Neon or
+  Supabase Postgres to avoid the expiry).
 
 ## Setup requirements (external)
 
 | Item | Needed for | Status |
 |---|---|---|
-| Anthropic API credits | Live Claude-powered test generation | Key is set in `server/.env` and authenticates, but the account has no credits (see below). Heuristic generator is used meanwhile. |
+| Anthropic API credits | Optional Claude generation only | Not needed. `AI_PROVIDER=local` (default) is free. |
 | Hosting account (e.g. Render) | Public deployment via `render.yaml` | Not created. Needs owner authorization. |
 
 ## Outstanding tasks
 
-1. Add credits at console.anthropic.com → Plans & Billing, then run one live AI generation.
-2. Deploy (only after the owner approves an account).
+1. Deploy (free tier via `render.yaml`) (only after the owner approves an account).
 
 ## Known limitations
 

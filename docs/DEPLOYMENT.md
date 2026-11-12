@@ -30,14 +30,31 @@ Open http://localhost:8080. The runtime image contains only production dependenc
 DATABASE_URL=postgresql://apiforge:<password>@localhost:5432/apiforge ENCRYPTION_KEY=<same key> npm run db:seed
 ```
 
-## 2. Render (blueprint included)
+## 2. Render — free tier (blueprint included)
 
-1. Push the repository to GitHub.
-2. In Render: **New → Blueprint** and select the repo. `render.yaml` creates PostgreSQL, Redis (Key Value), the API, the worker, and the static web app.
-3. Set the `sync: false` variables in the dashboard: `ENCRYPTION_KEY` (32 random bytes, base64), `CORS_ORIGIN` (the web app's URL), and optionally `ANTHROPIC_API_KEY`.
-4. Change the `/api/*` rewrite destination in `render.yaml` to your API service URL if it differs.
+Everything in `render.yaml` uses free plans. No paid service is required.
 
-Render's paid plans are needed for the worker and Redis. Check pricing before applying.
+1. Push the repository to GitHub (already done for this project).
+2. In Render: **New → Blueprint**, then select the repo. `render.yaml` creates a free
+   PostgreSQL database, the API (Docker, free web service) and the web app
+   (static site, free).
+3. In the dashboard, set the `sync: false` variables on `apiforge-api`:
+   - `ENCRYPTION_KEY`: generate it with
+     `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`.
+   - `CORS_ORIGIN`: the web app's URL, e.g. `https://apiforge-web.onrender.com`.
+4. If your API URL differs from `https://apiforge-api.onrender.com`, change the
+   `/api/*` rewrite destination in `render.yaml`.
+5. Open the web app and register an account. Migrations run automatically when
+   the API starts.
+
+Free-tier trade-offs:
+
+| Limitation | Effect | Workaround |
+|---|---|---|
+| No background worker or Redis (both paid on Render) | Suite runs execute in-process in the API, so only one instance should run | None needed for a demo. Set `REDIS_URL` and add a worker service to scale later. |
+| Free web services sleep after about 15 minutes idle | The first request after sleeping takes about a minute | Expected on free plans. |
+| Render free Postgres expires after 30 days | The database is deleted | Use a free Neon or Supabase Postgres: remove the `databases` block and set `DATABASE_URL` on `apiforge-api` by hand. |
+| AI generation | `AI_PROVIDER=local` uses the built-in rule-based generator (free) | Optional: `AI_PROVIDER=claude` plus `ANTHROPIC_API_KEY` (paid). |
 
 ## 3. Any container platform (Fly.io, Railway, ECS, Cloud Run, Kubernetes)
 

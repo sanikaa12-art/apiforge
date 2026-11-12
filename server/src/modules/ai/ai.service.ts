@@ -1,15 +1,20 @@
 import { env } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import type { EndpointDescriptor } from "../openapi/parser.js";
-import { claudeEnabled, claudeGenerate, claudeSummarize, type FailureForSummary } from "./claude.js";
+import { claudeDisabledReason, claudeEnabled, claudeGenerate, claudeSummarize, noteClaudeError, type FailureForSummary } from "./claude.js";
 import { heuristicForEndpoint } from "./heuristic.js";
 import { heuristicSummary } from "./summary.js";
 import type { GenerationOptions, GenerationResult } from "./types.js";
 
 export function aiStatus() {
-  return claudeEnabled()
-    ? { provider: "claude" as const, model: env.AI_MODEL }
-    : { provider: "heuristic" as const, model: null, notice: "Set ANTHROPIC_API_KEY to enable Claude-powered generation. The built-in rule-based generator is active." };
+  if (claudeEnabled()) return { provider: "claude" as const, model: env.AI_MODEL };
+  const reason = claudeDisabledReason();
+  const notice = reason
+    ? `Claude is unavailable (${reason}); the built-in generator is active.`
+    : env.AI_PROVIDER === "claude"
+      ? "AI_PROVIDER=claude but ANTHROPIC_API_KEY is not set; the built-in generator is active."
+      : "Runs locally — no API key or paid service needed.";
+  return { provider: "heuristic" as const, model: null, notice };
 }
 
 export async function generateTests(endpoints: EndpointDescriptor[], opts: GenerationOptions, inferred = false): Promise<GenerationResult> {
@@ -18,7 +23,8 @@ export async function generateTests(endpoints: EndpointDescriptor[], opts: Gener
       const r = await claudeGenerate(endpoints, opts);
       if (r.tests.length) return { provider: "claude", model: env.AI_MODEL, tests: r.tests, validationGaps: r.gaps };
     } catch (err) {
-      logger.warn({ err }, "Claude generation failed; falling back to heuristic generator");
+      noteClaudeError(err);
+      logger.warn({ err: (err as Error)?.message }, "Claude generation failed; falling back to heuristic generator");
       const fallback = runHeuristic(endpoints, opts, inferred);
       return { ...fallback, notice: "AI service was unavailable, so the built-in generator was used instead." };
     }
@@ -42,7 +48,8 @@ export async function summarizeFailures(suiteName: string, stats: { total: numbe
     try {
       return { text: await claudeSummarize(suiteName, stats, failures), source: "claude" };
     } catch (err) {
-      logger.warn({ err }, "Claude summary failed; using heuristic summary");
+      noteClaudeError(err);
+      logger.warn({ err: (err as Error)?.message }, "Claude summary failed; using heuristic summary");
     }
   }
   return { text: heuristicSummary(suiteName, stats, failures), source: "heuristic" };

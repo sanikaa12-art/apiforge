@@ -16,7 +16,17 @@ import type { EndpointDescriptor } from "../openapi/parser.js";
 import type { GeneratedTest, GenerationOptions, ValidationGap } from "./types.js";
 
 let client: Anthropic | undefined;
-export const claudeEnabled = () => !!env.ANTHROPIC_API_KEY;
+// Set when Anthropic rejects the key or the account (401/403, or billing errors), so a
+// broken or unfunded key costs one failed request, not one per generation.
+let disabledReason: string | null = null;
+export const claudeEnabled = () => env.AI_PROVIDER === "claude" && !!env.ANTHROPIC_API_KEY && !disabledReason;
+export const claudeDisabledReason = () => disabledReason;
+export function noteClaudeError(err: unknown) {
+  const e = err as { status?: number; message?: string };
+  if (e?.status === 401 || e?.status === 403) disabledReason = "the Anthropic API key was rejected";
+  else if (e?.status === 400 && /credit balance|billing/i.test(e.message ?? "")) disabledReason = "the Anthropic account has no API credits";
+  if (disabledReason) logger.warn({ reason: disabledReason }, "Claude disabled for this process; using the local generator");
+}
 const getClient = () => (client ??= new Anthropic({ apiKey: env.ANTHROPIC_API_KEY, timeout: 180_000, maxRetries: 2 }));
 
 const kv = z.object({ key: z.string(), value: z.string() });

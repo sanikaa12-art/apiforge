@@ -15,6 +15,7 @@ export default defineConfig({
       JWT_ACCESS_SECRET: "test-secret-test-secret-test-secret-1234",
       ENCRYPTION_KEY: Buffer.alloc(32, 7).toString("base64"),
       BCRYPT_ROUNDS: "4",
+      AI_PROVIDER: "local",
       ANTHROPIC_API_KEY: "",
       REDIS_URL: "",
       SSRF_ALLOWLIST: "",

@@ -94,16 +94,34 @@ export function heuristicForEndpoint(ep: EndpointDescriptor, opts: GenerationOpt
       });
       tests.push(make({ name: "Returns 404 for a non-existent resource", description: "Unknown identifiers should produce 404 (or 400 for malformed ids), never 500.", category: "negative", url: `${opts.baseUrl}${missingPath}`, body: exampleBody, assertions: [status("in", [404, 400])] }));
     }
+    for (const q of queryParams.slice(0, 2)) {
+      tests.push(make({ name: `Rejects missing required query parameter "${q.key}"`, description: `"${q.key}" is a required query parameter.`, category: "negative", queryParams: queryParams.filter((x) => x.key !== q.key), body: exampleBody, assertions: [status("in", CLIENT_ERROR)] }));
+    }
     if (ep.secured) {
       tests.push(make({ name: "Rejects request without credentials", description: "Protected endpoint must require authentication.", category: "security", headers: baseHeaders.filter((h) => h.key.toLowerCase() !== "authorization"), body: exampleBody, assertions: [status("in", [401, 403])] }));
     }
   }
 
+  // ---- Path parameter abuse -------------------------------------------------
+  const firstPathParam = ep.parameters.find((p) => p.in === "path");
+  if (firstPathParam && want("security")) {
+    const probe = ep.path.replace(`{${firstPathParam.name}}`, encodeURIComponent("../../etc/passwd' OR 1=1--"));
+    tests.push(make({ name: `Traversal/injection in path parameter "${firstPathParam.name}"`, description: "Path parameters must be validated; hostile input should give a 4xx, never a 5xx or a 2xx.", category: "security", url: `${opts.baseUrl}${fillPath({ ...ep, path: probe })}`, body: exampleBody, assertions: [status("greaterThan", 399), notServerError] }));
+  }
+
   // ---- Edge cases & validation gaps -----------------------------------------
   for (const [field, s] of Object.entries(props)) {
     if (!s) continue;
+    if (Array.isArray(s.enum) && s.enum.length && hasJsonBody && want("validation")) {
+      tests.push(make({ name: `Rejects value outside enum for "${field}"`, description: `Allowed values: ${s.enum.slice(0, 5).join(", ")}.`, category: "validation", body: withBody((b) => (b[field] = "__not_an_allowed_value__")), assertions: [status("in", CLIENT_ERROR)] }));
+    }
+    const badFormat: Record<string, string> = { email: "not-an-email", uuid: "not-a-uuid", "date-time": "yesterday at noon", date: "2024-13-45", uri: "::not a url::", url: "::not a url::" };
+    if (s.type === "string" && s.format && badFormat[s.format] && hasJsonBody && want("validation")) {
+      tests.push(make({ name: `Rejects invalid ${s.format} in "${field}"`, description: `"${field}" must be a valid ${s.format}.`, category: "validation", body: withBody((b) => (b[field] = badFormat[s.format])), assertions: [status("in", CLIENT_ERROR)] }));
+    }
     if (s.type === "string" && !s.enum && !s.format) {
       if (typeof s.maxLength === "number") {
+        if (want("edge") && s.maxLength <= 10_000) tests.push(make({ name: `"${field}" exactly at maxLength (${s.maxLength} chars) is accepted`, description: "Boundary test: the limit itself is valid.", category: "edge", body: withBody((b) => (b[field] = "a".repeat(s.maxLength))), assertions: [status("lessThan", 400)] }));
         if (want("edge")) tests.push(make({ name: `"${field}" just over maxLength (${s.maxLength + 1} chars)`, description: `Boundary test: maxLength is ${s.maxLength}.`, category: "edge", body: withBody((b) => (b[field] = "a".repeat(s.maxLength + 1))), assertions: [status("in", CLIENT_ERROR)] }));
       } else {
         gaps.push({ endpoint: label, field, issue: `String field "${field}" has no maxLength`, recommendation: `Add a maxLength (e.g. 255) so oversized payloads are rejected early.`, severity: "medium" });
@@ -151,7 +169,23 @@ export function heuristicForEndpoint(ep: EndpointDescriptor, opts: GenerationOpt
     if (["POST", "PUT", "PATCH", "DELETE"].includes(ep.method) && !ep.secured) gaps.push({ endpoint: label, field: null, issue: "Write operation has no security requirement", recommendation: "Require authentication for endpoints that modify data.", severity: "high" });
   }
 
-  return { tests: tests.slice(0, opts.maxPerEndpoint), gaps };
+  return { tests: pickBalanced(tests, opts.maxPerEndpoint), gaps };
+}
+
+/**
+ * Picks up to `max` tests, round-robin across categories in a fixed priority order,
+ * so a small limit still covers happy path, negative, security and edge cases
+ * instead of being filled by whichever rule ran first. Duplicate names are dropped.
+ */
+export function pickBalanced(tests: GeneratedTest[], max: number): GeneratedTest[] {
+  const order: TestCategory[] = ["positive", "negative", "security", "validation", "edge"];
+  const seen = new Set<string>();
+  const buckets = order.map((c) => tests.filter((t) => t.category === c && !seen.has(t.name) && seen.add(t.name)));
+  const out: GeneratedTest[] = [];
+  for (let i = 0; out.length < max && buckets.some((b) => i < b.length); i++) {
+    for (const b of buckets) if (i < b.length && out.length < max) out.push(b[i]!);
+  }
+  return out;
 }
 
 /** Infers a JSON schema from a sample value — used when there is no OpenAPI spec. */

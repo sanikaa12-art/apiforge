@@ -26,6 +26,9 @@ const schema = z.object({
 
   REDIS_URL: z.string().optional().transform((v) => (v ? v : undefined)),
 
+  // "local" (default) never calls a paid service. "claude" opts in to Anthropic and
+  // requires ANTHROPIC_API_KEY; the local generator is still used as a fallback.
+  AI_PROVIDER: z.enum(["local", "claude"]).default("local"),
   ANTHROPIC_API_KEY: z.string().optional().transform((v) => (v ? v : undefined)),
   AI_MODEL: z.string().default("claude-opus-5-5"),
 
